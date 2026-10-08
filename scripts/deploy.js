@@ -1,7 +1,7 @@
 const { ethers } = require("hardhat");
 
 async function main() {
-  const baseURI = "ipfs://QmYourBaseMetadataURI/";
+  const baseURI = "ipfs://QmYourCollectionCID/";
 
   const GenesisNFT = await ethers.getContractFactory("GenesisNFT");
   const contract = await GenesisNFT.deploy(baseURI);
@@ -11,6 +11,7 @@ async function main() {
   const address = await contract.getAddress();
 
   console.log("GenesisNFT deployed to:", address);
+  console.log("Base URI:", baseURI);
 }
 
 main().catch((error) => {
