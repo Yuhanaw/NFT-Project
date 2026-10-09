@@ -2,8 +2,13 @@ import { useEffect, useState } from "react";
 import { ethers } from "ethers";
 import Header from "../components/Header";
 
-const contractAddress = process.env.NEXT_PUBLIC_CONTRACT_ADDRESS || "0x0000000000000000000000000000000000000000";
-const contractABI = [
+// Network configuration
+const NETWORKS = {
+  1: "Ethereum Mainnet",
+  11155111: "Sepolia Testnet",
+};
+
+const CONTRACT_ABI = [
   "function mint(address to) payable",
   "function name() view returns (string)",
   "function symbol() view returns (string)",
@@ -24,11 +29,19 @@ export default function MintPage() {
   const [totalSupply, setTotalSupply] = useState("0");
   const [isWhitelisted, setIsWhitelisted] = useState(false);
   const [whitelistEnabled, setWhitelistEnabled] = useState(false);
+  const [contractAddress, setContractAddress] = useState("");
+  const [wrongNetwork, setWrongNetwork] = useState(false);
 
   useEffect(() => {
     checkWallet();
-    fetchContractDetails();
+    fetchContractAddress();
   }, []);
+
+  const fetchContractAddress = () => {
+    const address = process.env.NEXT_PUBLIC_CONTRACT_ADDRESS || "0x0000000000000000000000000000000000000000";
+    const expectedChainId = parseInt(process.env.NEXT_PUBLIC_CONTRACT_CHAIN_ID || "11155111");
+    setContractAddress(address);
+  };
 
   const checkWallet = async () => {
     if (typeof window !== "undefined" && window.ethereum) {
@@ -37,13 +50,47 @@ export default function MintPage() {
         if (accounts.length > 0) {
           setWallet(accounts[0]);
           await fetchBalance(accounts[0]);
-          await checkWhitelistStatus(accounts[0]);
+          await checkChainAndFetchDetails(accounts[0]);
         }
-        const chainIdHex = await window.ethereum.request({ method: "eth_chainId" });
-        setChainId(parseInt(chainIdHex, 16));
+
+        // Listen for chain changes
+        window.ethereum.on("chainChanged", () => {
+          window.location.reload();
+        });
+
+        // Listen for account changes
+        window.ethereum.on("accountsChanged", (accounts) => {
+          if (accounts.length > 0) {
+            setWallet(accounts[0]);
+          } else {
+            setWallet("");
+          }
+        });
       } catch (error) {
         console.error("Error checking wallet:", error);
       }
+    }
+  };
+
+  const checkChainAndFetchDetails = async (address) => {
+    try {
+      const chainIdHex = await window.ethereum.request({ method: "eth_chainId" });
+      const currentChainId = parseInt(chainIdHex, 16);
+      const expectedChainId = parseInt(process.env.NEXT_PUBLIC_CONTRACT_CHAIN_ID || "11155111");
+
+      setChainId(currentChainId);
+
+      if (currentChainId !== expectedChainId) {
+        setWrongNetwork(true);
+        setStatus(`Please switch to ${NETWORKS[expectedChainId] || "the correct network"}`);
+        return;
+      }
+
+      setWrongNetwork(false);
+      await fetchContractDetails();
+      await checkWhitelistStatus(address);
+    } catch (error) {
+      console.error("Error checking network:", error);
     }
   };
 
@@ -59,12 +106,12 @@ export default function MintPage() {
 
   const fetchContractDetails = async () => {
     try {
-      const provider = new ethers.JsonRpcProvider();
-      const contract = new ethers.Contract(contractAddress, contractABI, provider);
-      
+      const provider = new ethers.BrowserProvider(window.ethereum);
+      const contract = new ethers.Contract(contractAddress, CONTRACT_ABI, provider);
+
       const price = await contract.MINT_PRICE();
       setMintPrice(ethers.formatEther(price));
-      
+
       const supply = await contract.totalSupply();
       setTotalSupply(supply.toString());
 
@@ -78,7 +125,7 @@ export default function MintPage() {
   const checkWhitelistStatus = async (address) => {
     try {
       const provider = new ethers.BrowserProvider(window.ethereum);
-      const contract = new ethers.Contract(contractAddress, contractABI, provider);
+      const contract = new ethers.Contract(contractAddress, CONTRACT_ABI, provider);
       const whitelisted = await contract.isWhitelisted(address);
       setIsWhitelisted(whitelisted);
     } catch (error) {
@@ -96,7 +143,7 @@ export default function MintPage() {
       const accounts = await window.ethereum.request({ method: "eth_requestAccounts" });
       setWallet(accounts[0]);
       await fetchBalance(accounts[0]);
-      await checkWhitelistStatus(accounts[0]);
+      await checkChainAndFetchDetails(accounts[0]);
       setStatus(`Connected: ${accounts[0].slice(0, 6)}...${accounts[0].slice(-4)}`);
     } catch (error) {
       setStatus("Connection rejected by user.");
@@ -104,20 +151,33 @@ export default function MintPage() {
   };
 
   const switchNetwork = async () => {
+    const expectedChainId = parseInt(process.env.NEXT_PUBLIC_CONTRACT_CHAIN_ID || "11155111");
+    const chainIdHex = "0x" + expectedChainId.toString(16);
+
     try {
       await window.ethereum.request({
         method: "wallet_switchEthereumChain",
-        params: [{ chainId: "0x1" }] // Mainnet
+        params: [{ chainId: chainIdHex }],
       });
       setStatus("Network switched. Ready to mint.");
+      await checkChainAndFetchDetails(wallet);
     } catch (error) {
-      setStatus("Failed to switch network.");
+      if (error.code === 4902) {
+        setStatus("Network not added to wallet. Please add it manually.");
+      } else {
+        setStatus("Failed to switch network.");
+      }
     }
   };
 
   const mintNFT = async () => {
     if (!wallet) {
       setStatus("Connect wallet first.");
+      return;
+    }
+
+    if (wrongNetwork) {
+      setStatus("Please switch to the correct network.");
       return;
     }
 
@@ -137,11 +197,11 @@ export default function MintPage() {
 
       const provider = new ethers.BrowserProvider(window.ethereum);
       const signer = await provider.getSigner();
-      const contract = new ethers.Contract(contractAddress, contractABI, signer);
+      const contract = new ethers.Contract(contractAddress, CONTRACT_ABI, signer);
 
       const tx = await contract.mint(wallet, { value: ethers.parseEther(mintPrice) });
       setStatus("Transaction sent... waiting for confirmation.");
-      
+
       await tx.wait();
       setStatus("🎉 NFT minted successfully! Check your wallet.");
       await fetchBalance(wallet);
@@ -177,7 +237,7 @@ export default function MintPage() {
               <li>✓ Total Supply: 1,000 NFTs</li>
               <li>✓ Minted: {totalSupply} / 1,000</li>
               <li>✓ Royalty: 5% (creator earnings)</li>
-              <li>✓ Network: Ethereum-compatible</li>
+              <li>✓ Network: {NETWORKS[chainId] || "Ethereum-compatible"}</li>
             </ul>
           </div>
 
@@ -186,6 +246,11 @@ export default function MintPage() {
               <>
                 <p className="wallet-address">📋 Wallet: {wallet.slice(0, 8)}...{wallet.slice(-6)}</p>
                 <p className="mint-status">💰 Balance: {parseFloat(balance).toFixed(4)} ETH</p>
+                {chainId && (
+                  <p className="mint-status" style={{ color: wrongNetwork ? "#ff6b6b" : "#7dd3fc" }}>
+                    🔗 Network: {NETWORKS[chainId] || `Chain ${chainId}`}
+                  </p>
+                )}
                 {whitelistEnabled && (
                   <p className="mint-status" style={{ color: isWhitelisted ? "#7dd3fc" : "#ff6b6b" }}>
                     {isWhitelisted ? "✅ Whitelisted" : "❌ Not whitelisted"}
@@ -196,13 +261,23 @@ export default function MintPage() {
               <p className="wallet-address">No wallet connected</p>
             )}
 
-            <button className="primary-btn full-width" onClick={connectWallet} disabled={isLoading}>
-              {wallet ? "Reconnect wallet" : "Connect wallet"}
-            </button>
+            {wrongNetwork && (
+              <button className="secondary-btn full-width" onClick={switchNetwork} disabled={isLoading}>
+                Switch to {NETWORKS[parseInt(process.env.NEXT_PUBLIC_CONTRACT_CHAIN_ID || "11155111")]}
+              </button>
+            )}
 
-            <button className="secondary-btn full-width" onClick={mintNFT} disabled={isLoading || !wallet}>
-              {isLoading ? "Minting..." : `Mint NFT (${mintPrice} ETH)`}
-            </button>
+            {!wrongNetwork && (
+              <>
+                <button className="primary-btn full-width" onClick={connectWallet} disabled={isLoading}>
+                  {wallet ? "Reconnect wallet" : "Connect wallet"}
+                </button>
+
+                <button className="secondary-btn full-width" onClick={mintNFT} disabled={isLoading || !wallet || wrongNetwork}>
+                  {isLoading ? "Minting..." : `Mint NFT (${mintPrice} ETH)`}
+                </button>
+              </>
+            )}
 
             <p className="mint-status">{status}</p>
           </div>
