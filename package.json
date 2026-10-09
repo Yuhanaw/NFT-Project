@@ -9,7 +9,9 @@
     "lint": "next lint",
     "compile": "hardhat compile",
     "deploy": "hardhat run scripts/deploy.js --network localhost",
-    "node:local": "hardhat node"
+    "deploy:sepolia": "hardhat run scripts/deploy.js --network sepolia",
+    "node:local": "hardhat node",
+    "upload-metadata": "hardhat run scripts/uploadMetadata.js"
   },
   "dependencies": {
     "@openzeppelin/contracts": "^5.0.0",
