@@ -1,119 +1,92 @@
+import { useEffect, useState } from "react";
+import { ethers } from "ethers";
+import Link from "next/link";
 import Header from "../components/Header";
 import NFTCard from "../components/NFTCard";
 
-const featuredNFT = {
-  title: "Solar Forge",
-  image:
-    "https://images.unsplash.com/photo-1541961017774-22349e4a1262?auto=format&fit=crop&w=900&q=80",
-  price: "0.42 ETH",
-  edition: "#001 / 10",
-  description: "Limited-edition cosmic artwork from the first Genesis drop.",
-};
-
-const nftItems = [
-  {
-    title: "Neon Galaxy",
-    image:
-      "https://images.unsplash.com/photo-1639762681485-074b7f938ba0?auto=format&fit=crop&w=900&q=80",
-    price: "0.18 ETH",
-    edition: "#002 / 10",
-    description: "Electric sci-fi composition with immersive neon textures.",
-  },
-  {
-    title: "Cyber Cat",
-    image:
-      "https://images.unsplash.com/photo-1518770660439-4636190af475?auto=format&fit=crop&w=900&q=80",
-    price: "0.21 ETH",
-    edition: "#003 / 10",
-    description: "A stealth-style digital portrait with futuristic lighting.",
-  },
-  {
-    title: "Aurora Bloom",
-    image:
-      "https://images.unsplash.com/photo-1526379095098-d400fd0bf935?auto=format&fit=crop&w=900&q=80",
-    price: "0.14 ETH",
-    edition: "#004 / 10",
-    description: "Soft gradients and abstract wave energy in motion.",
-  },
-  {
-    title: "Pixel Tide",
-    image:
-      "https://images.unsplash.com/photo-1516321318423-f06f85e504b3?auto=format&fit=crop&w=900&q=80",
-    price: "0.19 ETH",
-    edition: "#005 / 10",
-    description: "A vivid digital tide shaped by light, data, and motion.",
-  },
+const contractAddress = process.env.NEXT_PUBLIC_CONTRACT_ADDRESS || "0x0000000000000000000000000000000000000000";
+const contractABI = [
+  "function totalSupply() view returns (uint256)",
+  "function tokenURI(uint256 tokenId) view returns (string)",
+  "function name() view returns (string)",
+  "function symbol() view returns (string)",
+  "function MINT_PRICE() view returns (uint256)",
+  "event Transfer(address indexed from, address indexed to, uint256 indexed tokenId)"
 ];
 
-export default function Home() {
+export default function Collection() {
+  const [nfts, setNfts] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [totalSupply, setTotalSupply] = useState(0);
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    fetchNFTs();
+  }, []);
+
+  const fetchNFTs = async () => {
+    try {
+      setLoading(true);
+      const provider = new ethers.JsonRpcProvider();
+      const contract = new ethers.Contract(contractAddress, contractABI, provider);
+
+      const supply = await contract.totalSupply();
+      setTotalSupply(supply.toString());
+
+      // Generate mock NFT data (in production, fetch from IPFS/API)
+      const mockNFTs = [];
+      const maxDisplay = Math.min(parseInt(supply), 12);
+      for (let i = 0; i < maxDisplay; i++) {
+        mockNFTs.push({
+          id: i,
+          name: `Genesis NFT #${String(i + 1).padStart(4, "0")}`,
+          image: `https://via.placeholder.com/240x260/7c3aed/ffffff?text=NFT+${i + 1}`,
+          price: "0.08",
+          owner: "0x..."
+        });
+      }
+      setNfts(mockNFTs);
+      setError("");
+    } catch (err) {
+      console.error("Error fetching NFTs:", err);
+      setError("Failed to load collection. Check contract address.");
+      setNfts([]);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   return (
     <>
-      <main className="container page-shell">
-        <section className="hero">
-          <div className="hero-copy">
-            <span className="eyebrow">Digital Art Collection</span>
-            <h1>Own rare art from the next generation of creators.</h1>
-            <p>
-              LUNAVERSE is a premium NFT marketplace for collectors, creators, and communities who
-              want to own digital culture on-chain.
-            </p>
-
-            <div className="hero-actions">
-              <a href="/collection" className="primary-btn">
-                Explore collection
-              </a>
-              <a href="/mint" className="secondary-btn">
-                Create NFT
-              </a>
-            </div>
-
-            <div className="stats-grid">
-              <div>
-                <strong>12.4K</strong>
-                <span>Collectors</span>
-              </div>
-              <div>
-                <strong>890</strong>
-                <span>Minted</span>
-              </div>
-              <div>
-                <strong>4.8 ETH</strong>
-                <span>Volume</span>
-              </div>
-            </div>
+      <Header />
+      <main className="container page-shell collection-page">
+        <div className="section-header">
+          <div>
+            <h2>Collection Gallery</h2>
+            <p style={{ color: "#9aaed0", marginTop: "8px" }}>Total minted: {totalSupply} / 1,000</p>
           </div>
+          <Link href="/mint">
+            <button className="primary-btn">Mint NFT</button>
+          </Link>
+        </div>
 
-          <div className="hero-visual">
-            <div className="featured-card">
-              <img src={featuredNFT.image} alt={featuredNFT.title} />
-              <div className="featured-card-body">
-                <div>
-                  <p>Featured Drop</p>
-                  <h3>{featuredNFT.title}</h3>
-                </div>
-                <span>{featuredNFT.price}</span>
-              </div>
-            </div>
-          </div>
-        </section>
+        {error && <p style={{ color: "#ff6b6b", marginBottom: "20px" }}>⚠️ {error}</p>}
 
-        <section className="section-block">
-          <div className="section-header">
-            <div>
-              <span className="eyebrow">Trending</span>
-              <h2>Top collections</h2>
-            </div>
-            <a href="/collection" className="secondary-btn">
-              View all
-            </a>
-          </div>
-
+        {loading ? (
+          <p style={{ textAlign: "center", color: "#9aaed0" }}>Loading collection...</p>
+        ) : nfts.length > 0 ? (
           <div className="nft-grid">
-            {nftItems.map((item) => (
-              <NFTCard key={item.title} {...item} />
+            {nfts.map((nft) => (
+              <Link key={nft.id} href={`/nft/${nft.id}`}>
+                <a>
+                  <NFTCard nft={nft} />
+                </a>
+              </Link>
             ))}
           </div>
-        </section>
+        ) : (
+          <p style={{ textAlign: "center", color: "#9aaed0" }}>No NFTs minted yet.</p>
+        )}
       </main>
     </>
   );
